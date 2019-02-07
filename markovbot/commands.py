@@ -56,6 +56,17 @@ async def mock(context, user: str = None):
         return
 
     else:
+        targeted_user = None
+        for member in server_context.server.members:
+            if member.nick == user:
+                targeted_user = member
+            else:
+                targeted_user = server_context.server.get_member_named(user)
+
+        if targeted_user is None:
+            await markovbot.say('Could not find user. Please try another user.')
+            return
+
         targeted_user = server_context.server.get_member_named(user)
         logs_by_user = list()
 
@@ -65,12 +76,17 @@ async def mock(context, user: str = None):
                 logs_by_user.append(message)
 
         # Get latest message from user
+        if not logs_by_user:
+            await markovbot.say('User does not have any messages in this channel')
+            return
+
         logs_by_user.sort(key=lambda message: message.timestamp, reverse=True)
 
         targeted_message = logs_by_user[0]
         sentence = mock_string(targeted_message.content)
 
         await markovbot.say(sentence)
+
 
 def mock_string(sentence: str):
     if sentence is None:
