@@ -1,12 +1,7 @@
-import asyncio
 import logging
 import random
-import math
 
-import markovify
-
-from discord.ext.commands import core
-
+from markovbot import utilities
 from markovbot import markovbot, datastore
 
 log = logging.getLogger(__name__)
@@ -23,7 +18,7 @@ async def say(context, user: str = None):
         return
 
     if user is None:
-        log.debug('Bot issued say command on server %s',
+        log.debug('Bot issued say command on server %s.',
                   server_context.server.name)
         sentence = server_context.markov.make_sentence_server()
 
@@ -41,7 +36,9 @@ async def say(context, user: str = None):
         sentence = server_context.markov.make_sentence_user(db_user)
 
         if sentence is None:
-            await markovbot.say('Unable to generate message for {}. This is probably because they have not sent enough messages.'.format(user))
+            await markovbot.say(
+                'Unable to generate message for {}. This is probably because they have not sent enough messages.'.format(
+                    user))
             return
 
     await markovbot.say(sentence)
@@ -50,81 +47,39 @@ async def say(context, user: str = None):
 @markovbot.command(pass_context=True, help='Mock the last specified user message.')
 async def mock(context, user: str = None):
     server_context = context.server_context
+    targeted_user = None
 
     if user is None:
-        await markovbot.say('Please specify a user')
-        return
+        members = server_context.server.members
+        targeted_user = list(members)[random.randint(0, len(members)) - 1]
+        await markovbot.say('Selected user {}'.format(targeted_user))
 
     else:
-        targeted_user = None
         for member in server_context.server.members:
             if member.nick == user:
                 targeted_user = member
             else:
                 targeted_user = server_context.server.get_member_named(user)
+    logs_by_user = list()
 
-        if targeted_user is None:
-            await markovbot.say('Could not find user. Please try another user.')
-            return
+    # Get messages from user in current channel
+    async for message in markovbot.logs_from(context.message.channel, limit=500):
+        if message.author.id == targeted_user.id and not message.content.startswith('!cancer'):
+            logs_by_user.append(message)
 
-        targeted_user = server_context.server.get_member_named(user)
-        logs_by_user = list()
-
-        # Get messages from user in current channel
-        async for message in markovbot.logs_from(context.message.channel, limit=500):
-            if message.author.id == targeted_user.id and not message.content.startswith('!cancer'):
-                logs_by_user.append(message)
-
-        # Get latest message from user
-        if not logs_by_user:
-            await markovbot.say('User does not have any messages in this channel')
-            return
-
-        logs_by_user.sort(key=lambda message: message.timestamp, reverse=True)
-
-        targeted_message = logs_by_user[0]
-        sentence = mock_string(targeted_message.content)
-
-        await markovbot.say(sentence)
-
-
-def mock_string(sentence: str):
-    if sentence is None:
+    # Get latest message from user
+    if not logs_by_user:
+        await markovbot.say('User does not have any messages in this channel.')
         return
 
-    # TODO: Might end up changing this to handle smaller strings.
-    mock_count = math.ceil(len(sentence) - len(sentence) / 2)
-    sentence_mock = list(sentence.lower())
+    logs_by_user.sort(key=lambda message: message.timestamp, reverse=True)
 
-    # TODO: Make a comparator array?
-    # elements = getRandomElements(sentence_mock, mock_count)
-    # TODO: Probably need to rename these for clarity.
-    i = 0
-    j = 0
-    k = 3
-    while j in range(0, mock_count) and k > 0:
-        # TODO: This could end up being too random and not get any chars.
-        capitalize = bool(random.getrandbits(1))
-        val = str(sentence_mock[i])
-        # Don't want to count a char mutation for spaces / integers / capitals.
-        if capitalize and sentence_mock[i] != ' ' and not (val.isdigit() or val.isupper()):
-            sentence_mock[i] = sentence_mock[i].upper()
-            j += 1
-        i += 1
-        # Restart at beginning of string if mock_count is not met.
-        # Only allow k runs
-        if i == len(sentence_mock):
-            i = 0
-            k -= 1
-    sentence = ''.join(str(e) for e in sentence_mock)
-    return sentence
+    targeted_message = logs_by_user[0]
+    sentence = utilities.mock_string(targeted_message.content)
 
-# Leaving this for now since I'm working off master.
-# def getRandomElements(sentence_mock, mock_count):
-#     result = []
-#     i = 0
-#     while i in range(0, mock_count):
-#         result.append(sentence_mock[math.floor(
-#             random.random() * sentence_mock.length)])
-#         i += 1
-#     return result
+    if sentence is None:
+        await markovbot.say('No alphabetic letters were found in previous message. '
+                            'Make sure {} uses letters in their message next time you weeb.'.format(user))
+        return
+
+    await markovbot.say(sentence)
